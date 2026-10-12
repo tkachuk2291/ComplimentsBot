@@ -4,6 +4,7 @@ services:
   compliment-bot:
     build: .
     image: compliment-bot:latest
+    pull_policy: build  # всегда собирать из репозитория, а не искать образ в Docker Hub
     container_name: compliment-bot
     restart: unless-stopped
     environment:
