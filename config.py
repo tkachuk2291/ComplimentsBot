@@ -20,11 +20,19 @@ def _required(name: str) -> str:
     return value
 
 
+def _id_list(name: str) -> frozenset[int]:
+    ids = frozenset(int(v) for v in os.getenv(name, "").replace(" ", "").split(",") if v)
+    if not ids:
+        raise RuntimeError(f"Не задана переменная окружения {name} — список Telegram ID через запятую")
+    return ids
+
+
 @dataclass(frozen=True)
 class Config:
     bot_token: str
     gemini_api_key: str
     gemini_models: list[str]
+    allowed_users: frozenset[int]  # кто может пользоваться ботом и получает рассылку
     girl_name: str
     sender_name: str
     birthday: str  # формат MM-DD, пусто = не задан
@@ -38,6 +46,7 @@ def load_config() -> Config:
         bot_token=_required("BOT_TOKEN"),
         gemini_api_key=_required("GEMINI_API_KEY"),
         gemini_models=[m.strip() for m in os.getenv("GEMINI_MODELS", "").split(",") if m.strip()],
+        allowed_users=_id_list("ALLOWED_USERS"),
         girl_name=os.getenv("GIRL_NAME", "солнце").strip(),
         sender_name=os.getenv("SENDER_NAME", "").strip(),
         birthday=os.getenv("GIRL_BIRTHDAY", "").strip(),

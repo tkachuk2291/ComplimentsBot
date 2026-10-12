@@ -8,8 +8,9 @@ Telegram-бот: через Gemini каждый день присылает ей
 3. `cp .env.example .env` и заполни.
 4. `.venv/bin/pip install -r requirements.txt`
 5. `.venv/bin/python main.py`
-6. Отправь ей ссылку на бота. Хозяйкой станет тот, кто первым нажмёт /start, — поэтому сам не жми.
-   Чтобы сменить хозяйку, останови бота и удали `data/state.json`.
+6. Впиши её Telegram ID в `ALLOWED_USERS` (несколько — через запятую) и отправь ей ссылку на бота.
+   Ей нужно один раз открыть бота и нажать /start — Telegram не даёт ботам писать первыми.
+   Всем, кого нет в списке, бот не отвечает.
 
 Бот должен работать постоянно (VPS, Raspberry Pi или всегда включённый компьютер).
 
@@ -37,12 +38,12 @@ Telegram-бот: через Gemini каждый день присылает ей
 2. Portainer → **Stacks → Add stack → Repository**:
    - Repository URL — ссылка на репозиторий (для приватного включи Authentication и укажи токен);
    - Compose path — `docker-compose.yml`.
-3. В **Environment variables** добавь минимум `BOT_TOKEN` и `GEMINI_API_KEY`
+3. В **Environment variables** добавь минимум `BOT_TOKEN`, `GEMINI_API_KEY` и `ALLOWED_USERS`
    (остальные — по желанию, см. `.env.example`).
 4. **Deploy the stack**. Обновление после `git push` — кнопка **Pull and redeploy** в стеке
    (или включи GitOps updates, чтобы Portainer подтягивал изменения сам).
 
-Данные бота (хозяйка, расписание, история без повторов) лежат в volume `compliment-data`
+Данные бота (расписание, история без повторов) лежат в volume `compliment-data`
 и переживают пересборку. Не запускай одновременно локальную копию с тем же токеном — Telegram
 отдаёт сообщения только одному экземпляру.
 

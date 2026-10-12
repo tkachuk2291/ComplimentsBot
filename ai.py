@@ -30,6 +30,33 @@ ERROR_PAUSE = 5 * 60
 
 PROMPT_HISTORY = 25  # сколько последних текстов каждого вида показывать Gemini
 REPEAT_RETRIES = 2  # сколько раз переспросить, если получился повтор
+# Прозвища можно только склонять: пупс/пупса/пупсу/пупсом/пупсе (+ мн. ч.), так же «кабан».
+NICK_ENDINGS = ("", "а", "у", "ом", "е", "ы", "ов", "ам", "ами", "ах")
+NICK_RE = re.compile(r"\b(пупс|кабан)([а-яё]*)", re.IGNORECASE)
+
+
+def bad_nicknames(text: str) -> list[str]:
+    """Уменьшительные/производные формы прозвищ («пупсик», «кабанчику», «пупсёнок»…)."""
+    return [m.group(0) for m in NICK_RE.finditer(text) if m.group(2).lower() not in NICK_ENDINGS]
+
+
+def fix_nicknames(text: str) -> str:
+    """Страховка: «кабанчику» → «кабану», «пупсиком» → «пупсом» — падеж сохраняем, уменьшительность убираем."""
+    def repl(m: re.Match) -> str:
+        stem, tail = m.group(1), m.group(2)
+        if tail.lower() in NICK_ENDINGS:
+            return m.group(0)
+        low = tail.lower()
+        if low.endswith(("ище", "ина")):  # «кабанище», «кабанина» — увеличительные, берём начальную форму
+            return stem
+        ending = next((e for e in ("ами", "ах", "ам", "ов", "ом", "ем", "ой") if low.endswith(e)), None)
+        if ending is None:
+            ending = low[-1] if low[-1:] in ("а", "у", "е", "ы", "и") else ""
+        ending = {"ем": "ом", "ой": "ом", "и": "ы", "я": "а", "ю": "у"}.get(ending, ending)
+        return stem + (ending.upper() if tail.isupper() else ending)
+    return NICK_RE.sub(repl, text)
+
+
 KIND_NAMES = {
     "compliment": "Комплименты",
     "prediction": "Предсказания",
@@ -80,8 +107,9 @@ class AI:
             "Правила:\n"
             "- Пиши только по-русски, обращайся к ней на «ты», в женском роде.\n"
             "- МАКСИМАЛЬНО МИЛО и нежно, но живо и с юмором; без пошлости и без банальщины вроде «ты как солнышко».\n"
-            f"- Называй её ласково: {', '.join(NICKNAMES)} (и пупсик, кабанчик) — почти в каждом сообщении, "
-            "чередуя прозвища.\n"
+            f"- Называй её ласково: {' и '.join(f'«{n}»' for n in NICKNAMES)} — почти в каждом сообщении, чередуя. "
+            "Только эти слова, меняется лишь падеж (пупса, пупсу, кабаном…); НИКАКИХ уменьшительных и производных "
+            "(«пупсик», «кабанчик», «пупсёнок» и т.п. — запрещено).\n"
             "- Бери темы из ВСЕЙ её жизни — характер, умения, хобби, распорядок дня, внешность, мелочи. "
             "Не зацикливайся на работе и креативах. Одна точная деталь лучше пяти общих слов.\n"
             "- Строго соблюдай раздел «Как с ней говорить».\n"
@@ -191,17 +219,34 @@ class AI:
         for attempt in range(REPEAT_RETRIES + 1):
             result = await self._ask(prompt + avoid + note, schema, temperature=1.15 + 0.1 * attempt)
             repeats = [f for f, kind in fields.items() if self.store.is_repeat(kind, getattr(result, f))]
-            if not repeats:
+            wrong_nicks = sorted({n for value in result.model_dump().values() if isinstance(value, str)
+                                  for n in bad_nicknames(value)})
+            if not repeats and not wrong_nicks:
                 break
-            log.info("Повтор в полях %s (попытка %s) — прошу другой вариант", repeats, attempt + 1)
-            rejected = "\n".join(f"- {getattr(result, f)}" for f in repeats)
-            note = (
-                f"\n\nЭти варианты слишком похожи на уже отправленные, их нельзя:\n{rejected}\n"
-                "Придумай совершенно другую идею и другие слова."
-            )
+            note = ""
+            if repeats:
+                log.info("Повтор в полях %s (попытка %s) — прошу другой вариант", repeats, attempt + 1)
+                rejected = "\n".join(f"- {getattr(result, f)}" for f in repeats)
+                note += (
+                    f"\n\nЭти варианты слишком похожи на уже отправленные, их нельзя:\n{rejected}\n"
+                    "Придумай совершенно другую идею и другие слова."
+                )
+            if wrong_nicks:
+                log.info("Запрещённые формы прозвищ %s (попытка %s) — прошу переписать", wrong_nicks, attempt + 1)
+                note += (
+                    f"\n\nНельзя писать {', '.join(f'«{n}»' for n in wrong_nicks)}. Только «пупс» и «кабан», "
+                    "можно менять лишь падеж (пупса, пупсу, кабану, кабаном…), без уменьшительных форм."
+                )
+        result = self._clean(result)
         for field, kind in fields.items():
             self.store.remember(kind, getattr(result, field))
         return result
+
+    @staticmethod
+    def _clean(result: BaseModel) -> BaseModel:
+        """Последняя страховка: исправляет прозвища, если Gemini так и не послушался."""
+        fixed = {k: fix_nicknames(v) if isinstance(v, str) else v for k, v in result.model_dump().items()}
+        return type(result)(**fixed)
 
     def _spare(self, kind: str, options: list[str]) -> str:
         text = self.store.unused(kind, options)
@@ -260,7 +305,7 @@ class AI:
         """Один текст; kind — вид для защиты от повторов (None — не проверять, например для переписки)."""
         try:
             if kind is None:
-                return (await self._ask(prompt, Text)).text
+                return fix_nicknames((await self._ask(prompt, Text)).text)
             return (await self._fresh(prompt, Text, {"text": kind})).text
         except Exception:
             log.exception("Gemini: %s", kind or "text")

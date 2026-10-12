@@ -31,9 +31,9 @@ PLACEHOLDER_STEP = 3  # раз в сколько секунд меняется �
 
 # Что показывать, пока Gemini думает: варианты первой фразы + фразы, если ответ задерживается.
 WAITING = {
-    "compliment": (["💭 Готовлю комплимент, пупс…", "✍️ Подбираю слова покрасивее…", "💖 Сочиняю кое-что приятное для кабанчика…"],
+    "compliment": (["💭 Готовлю комплимент, пупс…", "✍️ Подбираю слова покрасивее…", "💖 Сочиняю кое-что приятное для кабана…"],
                    ["Хм, обычные слова для такого пупса слишком простые…", "Почти готово, шлифую ✨"]),
-    "prediction": (["🔮 Смотрю в хрустальный шар…", "🔮 Советуюсь со звёздами…", "🔮 Раскладываю карты на кабанчика…"],
+    "prediction": (["🔮 Смотрю в хрустальный шар…", "🔮 Советуюсь со звёздами…", "🔮 Раскладываю карты на кабана…"],
                    ["Шар немного запотел, протираю…", "Звёзды что-то шепчут… 👀"]),
     "cookie": (["🥠 Достаю печеньку из духовки…", "🥠 Выбираю самую удачную печеньку для пупса…"],
                ["Горячая, дую…", "Разворачиваю записку…"]),
@@ -43,10 +43,10 @@ WAITING = {
                ["Список очень длинный, пупс, выбираю…", "Сложно выбрать одну 🙈"]),
     "morning": (["☀️ Собираю тебе утреннее сообщение…", "☀️ Завариваю утренний комплимент для пупса…"],
                 ["Добавляю щепотку предсказаний…", "Заряжаю суперсилу дня ⚡️"]),
-    "evening": (["🌙 Готовлю вечернее послание…", "🌙 Пишу кабанчику на ночь…"],
+    "evening": (["🌙 Готовлю вечернее послание…", "🌙 Пишу кабану на ночь…"],
                 ["Прячу секрет под спойлер…", "Почти готово 💌"]),
-    "support": (["🤗 Думаю, как тебя поддержать…", "🫂 Подбираю тёплые слова, пупсик…"],
-                ["Сейчас-сейчас…", "Обнимаю кабанчика, пока пишу 🤗"]),
+    "support": (["🤗 Думаю, как тебя поддержать…", "🫂 Подбираю тёплые слова, пупс…"],
+                ["Сейчас-сейчас…", "Обнимаю кабана, пока пишу 🤗"]),
     "happy": (["🎉 Радуюсь вместе с тобой, сейчас напишу…"], ["Танцую от радости, секунду…"]),
     "chat": (["💬 Печатаю…", "💭 Думаю над ответом…"], ["Хочу ответить красиво…", "Почти дописала…"]),
 }
@@ -140,9 +140,9 @@ def schedule_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def is_owner(user_id: int) -> bool:
-    """Хозяйка бота — тот, кто первым нажал /start."""
-    return user_id == store.owner_id
+def is_allowed(user_id: int) -> bool:
+    """Пользоваться ботом могут только те, кто указан в ALLOWED_USERS."""
+    return user_id in cfg.allowed_users
 
 
 def too_fast(user_id: int) -> bool:
@@ -227,14 +227,13 @@ async def scheduler(bot: Bot) -> None:
             if not (start <= now < start + SEND_WINDOW) or store.was_sent(hhmm, today):
                 continue
             store.mark_sent(hhmm, today)
-            if not store.owner_id:
-                log.warning("Ещё никто не нажал /start — пропускаю %s", hhmm)
-                continue
-            try:
-                await send_slot(bot, slot_kind(hhmm), store.owner_id)
-                log.info("Отправлено по расписанию: %s", hhmm)
-            except Exception:
-                log.exception("Не удалось отправить %s", hhmm)
+            for user_id in cfg.allowed_users:
+                try:
+                    await send_slot(bot, slot_kind(hhmm), user_id)
+                    log.info("Отправлено по расписанию: %s → %s", hhmm, user_id)
+                except Exception:
+                    # Чаще всего — пользователь ещё ни разу не открыл бота (Telegram не даёт писать первым)
+                    log.exception("Не удалось отправить %s → %s", hhmm, user_id)
         await asyncio.sleep(30)
 
 
@@ -294,11 +293,8 @@ async def do_action(action: str, message: Message) -> None:
 
 @router.message(CommandStart())
 async def start(message: Message) -> None:
-    user = message.from_user
-    if store.owner_id is None:
-        store.owner_id = user.id
-        log.info("Хозяйка бота: %s (%s)", user.full_name, user.id)
-    if not is_owner(user.id):
+    if not is_allowed(message.from_user.id):
+        log.info("Отказ в доступе: %s (%s)", message.from_user.full_name, message.from_user.id)
         await message.answer("Этот бот уже кое-кому принадлежит 💌")
         return
     times = " и ".join(store.times) or "—"
@@ -315,7 +311,7 @@ async def start(message: Message) -> None:
 
 @router.message(Command("help"))
 async def help_cmd(message: Message) -> None:
-    if not is_owner(message.from_user.id):
+    if not is_allowed(message.from_user.id):
         return
     text = (
         "/now — сообщение прямо сейчас\n/compliment — комплимент\n/prediction — предсказание\n"
@@ -331,14 +327,14 @@ async def help_cmd(message: Message) -> None:
 
 @router.message(Command("compliment", "prediction", "cookie", "riddle", "reason", "now"))
 async def action_cmd(message: Message, command: CommandObject) -> None:
-    if not is_owner(message.from_user.id) or too_fast(message.from_user.id):
+    if not is_allowed(message.from_user.id) or too_fast(message.from_user.id):
         return
     await do_action(command.command, message)
 
 
 @router.message(Command("mood"))
 async def mood_cmd(message: Message) -> None:
-    if is_owner(message.from_user.id):
+    if is_allowed(message.from_user.id):
         await message.answer("Как ты сейчас? 🌈", reply_markup=mood_kb())
 
 
@@ -346,7 +342,7 @@ async def mood_cmd(message: Message) -> None:
 
 @router.message(Command("schedule"))
 async def schedule_cmd(message: Message, command: CommandObject) -> None:
-    if not is_owner(message.from_user.id):
+    if not is_allowed(message.from_user.id):
         return
     parts = (command.args or "").split(maxsplit=1)
     action, value = (parts + ["", ""])[:2]
@@ -373,21 +369,21 @@ async def schedule_cmd(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("pause"))
 async def pause_cmd(message: Message) -> None:
-    if is_owner(message.from_user.id):
+    if is_allowed(message.from_user.id):
         store.set_paused(True)
         await message.answer(schedule_text(), reply_markup=schedule_kb())
 
 
 @router.message(Command("resume"))
 async def resume_cmd(message: Message) -> None:
-    if is_owner(message.from_user.id):
+    if is_allowed(message.from_user.id):
         store.set_paused(False)
         await message.answer(schedule_text(), reply_markup=schedule_kb())
 
 
 @router.callback_query(F.data.startswith("sch:"))
 async def schedule_btn(cb: CallbackQuery, state: FSMContext) -> None:
-    if not is_owner(cb.from_user.id):
+    if not is_allowed(cb.from_user.id):
         await cb.answer()
         return
     _, action, *rest = cb.data.split(":", 2)
@@ -445,7 +441,7 @@ async def schedule_time_input(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("mood:"))
 async def mood_pick(cb: CallbackQuery) -> None:
     await cb.answer()
-    if not is_owner(cb.from_user.id):
+    if not is_allowed(cb.from_user.id):
         return
     mood = cb.data.split(":", 1)[1]
 
@@ -458,13 +454,13 @@ async def mood_pick(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "mood")
 async def mood_btn(cb: CallbackQuery) -> None:
     await cb.answer()
-    if is_owner(cb.from_user.id):
+    if is_allowed(cb.from_user.id):
         await cb.message.answer("Как ты сейчас? 🌈", reply_markup=mood_kb())
 
 
 @router.callback_query()
 async def action_btn(cb: CallbackQuery) -> None:
-    if not is_owner(cb.from_user.id) or too_fast(cb.from_user.id):
+    if not is_allowed(cb.from_user.id) or too_fast(cb.from_user.id):
         await cb.answer("Секундочку… ✨")
         return
     await cb.answer()
@@ -475,7 +471,7 @@ async def action_btn(cb: CallbackQuery) -> None:
 
 @router.message(Command("stats"))
 async def stats(message: Message) -> None:
-    if not is_owner(message.from_user.id):
+    if not is_allowed(message.from_user.id):
         return
     s = store.data["stats"]
     mode = "только по запросу" if store.paused else ", ".join(store.times) or "—"
@@ -489,7 +485,7 @@ async def stats(message: Message) -> None:
 
 @router.message(Command("models"))
 async def models(message: Message) -> None:
-    if not is_owner(message.from_user.id):
+    if not is_allowed(message.from_user.id):
         return
     lines = []
     for name, wait in ai.status():
@@ -501,7 +497,7 @@ async def models(message: Message) -> None:
 
 @router.message(F.text)
 async def free_chat(message: Message) -> None:
-    if not is_owner(message.from_user.id) or too_fast(message.from_user.id):
+    if not is_allowed(message.from_user.id) or too_fast(message.from_user.id):
         return
     async def produce() -> str:
         return e(await ai.chat(message.text[:500]))

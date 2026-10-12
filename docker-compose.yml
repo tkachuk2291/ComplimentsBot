@@ -10,6 +10,8 @@ services:
       # Обязательные — задай в Portainer: Stacks → Environment variables
       BOT_TOKEN: ${BOT_TOKEN}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # Telegram ID через запятую — только они могут пользоваться ботом и получают рассылку
+      ALLOWED_USERS: ${ALLOWED_USERS:-413753314}
       # Необязательные (значения после :- используются по умолчанию)
       GEMINI_MODELS: ${GEMINI_MODELS:-}
       GIRL_NAME: ${GIRL_NAME:-пупс}
@@ -19,7 +21,7 @@ services:
       TZ: ${TIMEZONE:-Europe/Moscow}
       DEFAULT_TIMES: ${DEFAULT_TIMES:-10:00,23:00}
     volumes:
-      # Хозяйка бота, её расписание, история (чтобы не было повторов) и счётчики
+      # Расписание, история (чтобы не было повторов) и счётчики
       - compliment-data:/app/data
     logging:
       driver: json-file

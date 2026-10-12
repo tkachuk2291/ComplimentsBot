@@ -24,13 +24,12 @@ def is_similar(a: str, b: str) -> bool:
 
 
 class Storage:
-    """Маленькое JSON-хранилище: чей бот, что уже отправляли, счётчики."""
+    """Маленькое JSON-хранилище: расписание, что уже отправляли, счётчики."""
 
     def __init__(self, path: str, default_times: list[str]):
         self.path = Path(path)
         self.default_times = sorted(default_times)
         self.data = {
-            "owner_id": None,
             "schedule": {"times": list(self.default_times), "paused": False},
             "last_day": None,
             "history": {},  # вид текста → последние отправленные
@@ -50,15 +49,6 @@ class Storage:
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, self.path)
-
-    @property
-    def owner_id(self) -> int | None:
-        return self.data["owner_id"]
-
-    @owner_id.setter
-    def owner_id(self, value: int | None) -> None:
-        self.data["owner_id"] = value
-        self.save()
 
     # ---------- Защита от повторов ----------
 
