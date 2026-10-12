@@ -1,0 +1,29 @@
+services:
+  compliment-bot:
+    build: .
+    image: compliment-bot:latest
+    container_name: compliment-bot
+    restart: unless-stopped
+    environment:
+      # Обязательные — задай в Portainer: Stacks → Environment variables
+      BOT_TOKEN: ${BOT_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # Необязательные (значения после :- используются по умолчанию)
+      GEMINI_MODELS: ${GEMINI_MODELS:-}
+      GIRL_NAME: ${GIRL_NAME:-пупс}
+      SENDER_NAME: ${SENDER_NAME:-}
+      GIRL_BIRTHDAY: ${GIRL_BIRTHDAY:-}
+      TIMEZONE: ${TIMEZONE:-Europe/Moscow}
+      TZ: ${TIMEZONE:-Europe/Moscow}
+      DEFAULT_TIMES: ${DEFAULT_TIMES:-10:00,23:00}
+    volumes:
+      # Хозяйка бота, её расписание, история (чтобы не было повторов) и счётчики
+      - compliment-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  compliment-data:

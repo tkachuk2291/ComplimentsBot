@@ -1,0 +1,5 @@
+# Основные зависимости. Точные версии всего дерева — в requirements.lock (его использует Dockerfile).
+aiogram==3.31.0
+google-genai==2.29.0
+python-dotenv==1.2.4
+tzdata==2026.5

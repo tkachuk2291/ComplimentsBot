@@ -1,0 +1,29 @@
+# Стек для веб-редактора Portainer (Stacks → Add stack → Web editor).
+# Веб-редактор не умеет собирать образ, поэтому сначала импортируй образ:
+# Images → Import → dist/compliment-bot-linux-amd64.tar.gz (имя образа: compliment-bot:latest).
+# Переменные задай ниже в разделе «Environment variables» (или «Load variables from .env file»).
+services:
+  compliment-bot:
+    image: compliment-bot:latest
+    container_name: compliment-bot
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODELS: ${GEMINI_MODELS:-}
+      GIRL_NAME: ${GIRL_NAME:-пупс}
+      SENDER_NAME: ${SENDER_NAME:-}
+      GIRL_BIRTHDAY: ${GIRL_BIRTHDAY:-}
+      TIMEZONE: ${TIMEZONE:-Europe/Moscow}
+      TZ: ${TIMEZONE:-Europe/Moscow}
+      DEFAULT_TIMES: ${DEFAULT_TIMES:-10:00,23:00}
+    volumes:
+      - compliment-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  compliment-data:

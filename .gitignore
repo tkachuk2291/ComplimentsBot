@@ -1,0 +1,28 @@
+# Секреты — никогда не коммитить
+.env
+stack.env
+*.env
+!.env.example
+
+# Данные бота (хозяйка, расписание, история)
+data/
+
+# Собранные образы для переноса
+dist/
+*.tar
+*.tar.gz
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE и система
+.idea/
+.vscode/
+.DS_Store
