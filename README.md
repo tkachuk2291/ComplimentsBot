@@ -31,3 +31,19 @@ Telegram-бот: через Gemini каждый день присылает ей
 `/stats` — статистика, `/models` — какие модели Gemini сейчас работают.
 
 Её описание и список тем — в `girl_profile.py`. Допиши туда детали: чем больше подробностей, тем точнее комплименты.
+
+## Деплой на сервер через Portainer (Git)
+1. Залей проект в git-репозиторий (`.env` и `data/` в `.gitignore` — секреты не попадут).
+2. Portainer → **Stacks → Add stack → Repository**:
+   - Repository URL — ссылка на репозиторий (для приватного включи Authentication и укажи токен);
+   - Compose path — `docker-compose.yml`.
+3. В **Environment variables** добавь минимум `BOT_TOKEN` и `GEMINI_API_KEY`
+   (остальные — по желанию, см. `.env.example`).
+4. **Deploy the stack**. Обновление после `git push` — кнопка **Pull and redeploy** в стеке
+   (или включи GitOps updates, чтобы Portainer подтягивал изменения сам).
+
+Данные бота (хозяйка, расписание, история без повторов) лежат в volume `compliment-data`
+и переживают пересборку. Не запускай одновременно локальную копию с тем же токеном — Telegram
+отдаёт сообщения только одному экземпляру.
+
+Версии всех библиотек залочены в `requirements.lock`, базовый образ — `python:3.13.16-slim`.

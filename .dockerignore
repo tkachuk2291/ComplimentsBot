@@ -5,15 +5,10 @@ venv/
 .idea/
 .vscode/
 data/
-dist/
 __pycache__/
 *.pyc
 .git/
 .gitignore
 .DS_Store
-*.tar
-*.tar.gz
 README.md
 docker-compose.yml
-portainer-stack.yml
-build-image.sh

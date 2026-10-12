@@ -1,3 +1,5 @@
+# Деплой через Portainer: Stacks → Add stack → Repository (URL git-репозитория, путь docker-compose.yml).
+# Portainer сам соберёт образ по Dockerfile. Переменные задаются в «Environment variables» стека.
 services:
   compliment-bot:
     build: .
