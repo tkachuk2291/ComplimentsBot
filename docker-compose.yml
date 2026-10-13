@@ -8,19 +8,20 @@ services:
     container_name: compliment-bot
     restart: unless-stopped
     environment:
-      # Обязательные — задай в Portainer: Stacks → Environment variables
+      # Все значения — только из env (Portainer: Stacks → Environment variables, локально — .env).
+      # Описание переменных — в .env.example. Пустые необязательные берут значения по умолчанию из config.py
       BOT_TOKEN: ${BOT_TOKEN}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      # Telegram ID через запятую — только они могут пользоваться ботом и получают рассылку
-      ALLOWED_USERS: ${ALLOWED_USERS:-413753314}
-      # Необязательные (значения после :- используются по умолчанию)
-      GEMINI_MODELS: ${GEMINI_MODELS:-}
-      GIRL_NAME: ${GIRL_NAME:-пупс}
-      SENDER_NAME: ${SENDER_NAME:-}
-      GIRL_BIRTHDAY: ${GIRL_BIRTHDAY:-}
-      TIMEZONE: ${TIMEZONE:-Europe/Moscow}
-      TZ: ${TIMEZONE:-Europe/Moscow}
-      DEFAULT_TIMES: ${DEFAULT_TIMES:-10:00,23:00}
+      ALLOWED_USERS: ${ALLOWED_USERS}
+      ADMIN_ID: ${ADMIN_ID}
+      ADMIN_SUMMARY_TIME: ${ADMIN_SUMMARY_TIME}
+      GEMINI_MODELS: ${GEMINI_MODELS}
+      GIRL_NAME: ${GIRL_NAME}
+      SENDER_NAME: ${SENDER_NAME}
+      GIRL_BIRTHDAY: ${GIRL_BIRTHDAY}
+      TIMEZONE: ${TIMEZONE}
+      TZ: ${TIMEZONE}
+      DEFAULT_TIMES: ${DEFAULT_TIMES}
     volumes:
       # Расписание, история (чтобы не было повторов) и счётчики
       - compliment-data:/app/data

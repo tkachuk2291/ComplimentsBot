@@ -7,6 +7,7 @@ from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel
 
+import admin_log
 import fallback
 from config import Config
 from storage import Storage
@@ -99,6 +100,7 @@ class AI:
         self.models = cfg.gemini_models or list(FREE_MODELS)
         self.paused_until: dict[str, float] = {}
         self.last_model: str | None = None
+        self.last_source = ""  # откуда последний текст: имя модели или «запасной текст» — для журнала админа
         self.store = store
         sender = f" Сообщения ей отправляет {cfg.sender_name}, он её очень ценит." if cfg.sender_name else ""
         self.system = (
@@ -184,6 +186,7 @@ class AI:
             response_schema=schema,
         )
         last_error: Exception | None = None
+        failed: list[str] = []
         for model in self.models:
             if self.paused_until.get(model, 0) > time.monotonic():
                 continue
@@ -191,7 +194,9 @@ class AI:
                 response = await self.client.aio.models.generate_content(model=model, contents=contents, config=config)
                 if response.parsed is None:
                     raise ValueError(f"пустой ответ: {response.text!r}")
-                self.last_model = model
+                self.last_model = self.last_source = model
+                if failed:
+                    admin_log.send(f"⚠️ Gemini: {admin_log.e(', '.join(failed))} → ответила {admin_log.e(model)}")
                 return response.parsed
             except errors.APIError as exc:
                 last_error = exc
@@ -204,9 +209,13 @@ class AI:
                     pause = ERROR_PAUSE
                 self.paused_until[model] = time.monotonic() + pause
                 log.warning("Модель %s: ошибка %s, переключаюсь на следующую", model, exc.code)
+                failed.append(f"{model} {exc.code}")
             except Exception as exc:
                 last_error = exc
                 log.warning("Модель %s: %s, переключаюсь на следующую", model, exc)
+                failed.append(f"{model} {type(exc).__name__}")
+        if failed:
+            admin_log.send(f"⚠️ Gemini: {admin_log.e(', '.join(failed))} → ни одна не ответила")
         raise RuntimeError(f"Ни одна модель не ответила: {last_error}")
 
     async def _fresh(self, prompt: str, schema: type[BaseModel], fields: dict[str, str]) -> BaseModel:
@@ -249,6 +258,7 @@ class AI:
         return type(result)(**fixed)
 
     def _spare(self, kind: str, options: list[str]) -> str:
+        self.last_source = "запасной текст"
         text = self.store.unused(kind, options)
         self.store.remember(kind, text)
         return text
@@ -309,6 +319,7 @@ class AI:
             return (await self._fresh(prompt, Text, {"text": kind})).text
         except Exception:
             log.exception("Gemini: %s", kind or "text")
+            self.last_source = "запасной текст"
             return self._spare(kind, spare) if kind else random.choice(spare)
 
     async def compliment(self) -> str:

@@ -2,12 +2,14 @@ import json
 import os
 import random
 import re
+import uuid
 from difflib import SequenceMatcher
 from pathlib import Path
 
 HISTORY_LIMIT = 150  # сколько последних текстов каждого вида помнить
 SIMILAR_WORDS = 0.5  # доля общих слов, после которой текст считается повтором
 SIMILAR_CHARS = 0.8  # похожесть по символам, после которой текст считается повтором
+DAILY_KEEP = 60  # сколько дней хранить дневную статистику
 
 
 def _stems(text: str) -> set[str]:
@@ -38,6 +40,10 @@ class Storage:
             "day_counter": 0,
             "reason_counter": 0,
             "stats": {"compliments": 0, "predictions": 0},
+            "daily": {},  # день → {"scheduled", "manual", "errors", "missed", "actions": {действие: N}}
+            "pending": [],  # не доставлено из-за отсутствия сети — дошлём, когда связь появится
+            "planned": [],  # разовые отправки из админ-панели
+            "last_success": None,  # когда последний раз сообщение по расписанию/вручную дошло
         }
         if self.path.exists():
             self.data.update(json.loads(self.path.read_text(encoding="utf-8")))
@@ -136,3 +142,59 @@ class Storage:
         stats = self.data["stats"]
         stats[key] = stats.get(key, 0) + 1
         self.save()
+
+    # ---------- Журнал для админа ----------
+
+    def today_stats(self, day: str) -> dict:
+        daily = self.data["daily"]
+        if day not in daily:
+            daily[day] = {"scheduled": 0, "manual": 0, "errors": 0, "missed": 0, "actions": {}}
+            for old in sorted(daily)[:-DAILY_KEEP]:
+                del daily[old]
+        return daily[day]
+
+    def count(self, day: str, key: str, action: str | None = None) -> None:
+        """Дневной счётчик: scheduled/manual/errors/missed или нажатие действия (key="actions")."""
+        stats = self.today_stats(day)
+        if action is None:
+            stats[key] = stats.get(key, 0) + 1
+        else:
+            stats["actions"][action] = stats["actions"].get(action, 0) + 1
+        self.save()
+
+    def totals(self) -> dict:
+        result = {"scheduled": 0, "manual": 0, "errors": 0, "missed": 0, "actions": {}}
+        for stats in self.data["daily"].values():
+            for key in ("scheduled", "manual", "errors", "missed"):
+                result[key] += stats.get(key, 0)
+            for action, n in stats.get("actions", {}).items():
+                result["actions"][action] = result["actions"].get(action, 0) + n
+        return result
+
+    def mark_success(self, when: str) -> None:
+        self.data["last_success"] = when
+        self.save()
+
+    # ---------- Недоставленное и разовые отправки ----------
+
+    def add_pending(self, item: dict) -> dict:
+        item = {"id": uuid.uuid4().hex[:8], **item}
+        self.data["pending"].append(item)
+        self.save()
+        return item
+
+    def remove_pending(self, item_id: str) -> None:
+        self.data["pending"] = [p for p in self.data["pending"] if p["id"] != item_id]
+        self.save()
+
+    def add_planned(self, at: str, kind: str, text: str | None = None) -> dict:
+        item = {"id": uuid.uuid4().hex[:8], "at": at, "kind": kind, "text": text}
+        self.data["planned"] = sorted(self.data["planned"] + [item], key=lambda p: p["at"])
+        self.save()
+        return item
+
+    def remove_planned(self, item_id: str) -> dict | None:
+        found = next((p for p in self.data["planned"] if p["id"] == item_id), None)
+        self.data["planned"] = [p for p in self.data["planned"] if p["id"] != item_id]
+        self.save()
+        return found
