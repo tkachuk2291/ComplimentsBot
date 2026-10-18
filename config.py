@@ -37,14 +37,14 @@ class Config:
     bot_token: str
     gemini_api_key: str
     gemini_models: list[str]
-    allowed_users: frozenset[int]  # кто может пользоваться ботом и получает рассылку
-    admin_id: int | None  # единственный админ: журнал без звука и /admin; рассылку не получает
-    summary_time: str  # «HH:MM» — когда админу приходит сводка за день
+    allowed_users: frozenset[int]
+    admin_id: int | None
+    summary_time: str
     girl_name: str
     sender_name: str
-    birthday: str  # формат MM-DD, пусто = не задан
+    birthday: str
     tz: ZoneInfo
-    default_times: list[str]  # «HH:MM», пока она не настроит своё расписание
+    default_times: list[str]
     data_path: str
 
 

@@ -6,10 +6,10 @@ import uuid
 from difflib import SequenceMatcher
 from pathlib import Path
 
-HISTORY_LIMIT = 150  # сколько последних текстов каждого вида помнить
-SIMILAR_WORDS = 0.5  # доля общих слов, после которой текст считается повтором
-SIMILAR_CHARS = 0.8  # похожесть по символам, после которой текст считается повтором
-DAILY_KEEP = 60  # сколько дней хранить дневную статистику
+HISTORY_LIMIT = 150
+SIMILAR_WORDS = 0.5
+SIMILAR_CHARS = 0.8
+DAILY_KEEP = 60
 
 
 def _stems(text: str) -> set[str]:
@@ -34,20 +34,20 @@ class Storage:
         self.data = {
             "schedule": {"times": list(self.default_times), "paused": False},
             "last_day": None,
-            "history": {},  # вид текста → последние отправленные
-            "bags": {},  # темы/форматы, которые ещё не выпадали в текущем круге
+            "history": {},
+            "bags": {},
             "last_sent": {},
             "day_counter": 0,
             "reason_counter": 0,
             "stats": {"compliments": 0, "predictions": 0},
-            "daily": {},  # день → {"scheduled", "manual", "errors", "missed", "actions": {действие: N}}
-            "pending": [],  # не доставлено из-за отсутствия сети — дошлём, когда связь появится
-            "planned": [],  # разовые отправки из админ-панели
-            "last_success": None,  # когда последний раз сообщение по расписанию/вручную дошло
+            "daily": {},
+            "pending": [],
+            "planned": [],
+            "last_success": None,
         }
         if self.path.exists():
             self.data.update(json.loads(self.path.read_text(encoding="utf-8")))
-        if isinstance(self.data["history"], list):  # старый формат — только комплименты
+        if isinstance(self.data["history"], list):
             self.data["history"] = {"compliment": self.data["history"]}
 
     def save(self) -> None:
@@ -56,7 +56,6 @@ class Storage:
         tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, self.path)
 
-    # ---------- Защита от повторов ----------
 
     def recent(self, kind: str, count: int | None = None) -> list[str]:
         items = self.data["history"].get(kind, [])
@@ -105,7 +104,6 @@ class Storage:
             self.save()
         return self.data["day_counter"]
 
-    # ---------- Расписание ----------
 
     @property
     def times(self) -> list[str]:
@@ -143,7 +141,6 @@ class Storage:
         stats[key] = stats.get(key, 0) + 1
         self.save()
 
-    # ---------- Журнал для админа ----------
 
     def today_stats(self, day: str) -> dict:
         daily = self.data["daily"]
@@ -175,7 +172,6 @@ class Storage:
         self.data["last_success"] = when
         self.save()
 
-    # ---------- Недоставленное и разовые отправки ----------
 
     def add_pending(self, item: dict) -> dict:
         item = {"id": uuid.uuid4().hex[:8], **item}

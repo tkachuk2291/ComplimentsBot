@@ -8,11 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Ставим строго залоченные версии всех библиотек (включая вложенные)
 COPY requirements.lock .
 RUN pip install --no-deps -r requirements.lock && pip check
 
-# Отдельный пользователь без root; папка data принадлежит ему, чтобы volume унаследовал права
 RUN useradd --create-home --uid 1000 bot && mkdir -p /app/data && chown bot:bot /app/data
 COPY --chown=bot:bot *.py ./
 

@@ -18,10 +18,10 @@ from aiogram.exceptions import TelegramNetworkError
 
 log = logging.getLogger("admin-log")
 
-QUEUE_LIMIT = 300  # больше — старые выкидываем, чтобы не копить бесконечно
-MESSAGE_LIMIT = 3800  # чуть меньше лимита Telegram (4096)
-FLUSH_PAUSE = 2  # секунд между проверками очереди
-PROBE_EVERY = 60  # раз в сколько секунд проверять связь с Telegram, когда её нет
+QUEUE_LIMIT = 300
+MESSAGE_LIMIT = 3800
+FLUSH_PAUSE = 2
+PROBE_EVERY = 60
 
 _bot: Bot | None = None
 _admin_id: int | None = None
@@ -121,7 +121,7 @@ def _batch() -> str:
         item = _queue.popleft()
         parts.append(item)
         size += len(item) + 2
-    if not parts and _queue:  # одно очень длинное сообщение — обрежем
+    if not parts and _queue:
         parts.append(_queue.popleft()[:MESSAGE_LIMIT])
     return "\n\n".join(parts)
 
@@ -150,7 +150,7 @@ async def _worker() -> None:
                     await _bot.send_message(_admin_id, text, disable_notification=True,
                                             disable_web_page_preview=True)
                 except TelegramNetworkError:
-                    _queue.appendleft(text)  # вернём в начало, уйдёт после восстановления
+                    _queue.appendleft(text)
                     network_down()
                     continue
                 except Exception:

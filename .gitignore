@@ -1,10 +1,8 @@
-# Секреты — никогда не коммитить
 .env
 stack.env
 *.env
 !.env.example
 
-# Данные бота (хозяйка, расписание, история)
 data/
 
 # Python
@@ -17,7 +15,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# IDE и система
 .idea/
 .vscode/
 .DS_Store

@@ -25,15 +25,14 @@ from storage import Storage
 log = logging.getLogger("compliment-bot")
 
 WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
-SEND_WINDOW = timedelta(hours=2)  # если бот был выключен в нужное время — догонит в течение 2 часов
+SEND_WINDOW = timedelta(hours=2)
 COOLDOWN_SECONDS = 4
 MAX_TIMES = 8
-PLACEHOLDER_STEP = 3  # раз в сколько секунд меняется фраза ожидания
-OFFLINE_RETRY_SECONDS = 30 * 60  # нет интернета — пробуем снова раз в полчаса
-DENIED_LOG_EVERY = 10 * 60  # чужой пользователь — сообщаем админу не чаще раза в 10 минут
+PLACEHOLDER_STEP = 3
+OFFLINE_RETRY_SECONDS = 30 * 60
+DENIED_LOG_EVERY = 10 * 60
 OFFLINE_NOTICE = "🐗 Кабанский сервер барахлит, Раша опять пукнула блэкаут, но комплимент доехал — держи ❤️"
 
-# Что показывать, пока Gemini думает: варианты первой фразы + фразы, если ответ задерживается.
 WAITING = {
     "compliment": (["💭 Готовлю комплимент, пупс…", "✍️ Подбираю слова покрасивее…", "💖 Сочиняю кое-что приятное для кабана…"],
                    ["Хм, обычные слова для такого пупса слишком простые…", "Почти готово, шлифую ✨"]),
@@ -63,7 +62,6 @@ _last_request: dict[int, float] = {}
 _denied_logged: dict[int, float] = {}
 STARTED_AT = datetime.now(cfg.tz)
 
-# Что можно отправить ей вручную или по плану (из админ-панели).
 SEND_KINDS = {
     "morning": "☀️ утреннее",
     "evening": "🌙 вечернее",
@@ -71,7 +69,6 @@ SEND_KINDS = {
     "prediction": "🔮 предсказание",
     "text": "✍️ свой текст",
 }
-# Как действия получателя называются в журнале админа.
 ACTION_LABELS = {
     "compliment": "💖 комплимент",
     "prediction": "🔮 предсказание",
@@ -88,9 +85,9 @@ class ScheduleForm(StatesGroup):
 
 
 class AdminForm(StatesGroup):
-    text = State()  # свой текст для отправки сейчас
-    plan_text = State()  # свой текст для разовой отправки
-    plan_time = State()  # время разовой отправки
+    text = State()
+    plan_text = State()
+    plan_time = State()
 
 
 def e(text: str) -> str:
@@ -199,8 +196,6 @@ def too_fast(user_id: int) -> bool:
     return False
 
 
-# ---------- Сборка сообщений ----------
-
 async def build_morning() -> str:
     now = datetime.now(cfg.tz)
     birthday = cfg.birthday == now.strftime("%m-%d")
@@ -264,7 +259,7 @@ async def deliver(bot: Bot, kind: str, chat_id: int, text: str | None = None) ->
     return html
 
 
-_retry_tasks: set[asyncio.Task] = set()  # держим ссылки, чтобы задачи не собрал GC
+_retry_tasks: set[asyncio.Task] = set()
 
 
 def postpone(bot: Bot, kind: str, chat_id: int, origin: str, counter: str, exc: Exception,
@@ -348,9 +343,9 @@ async def reply_with_placeholder(message: Message, key: str, produce: Callable[[
     return text
 
 
-_slot_attempts: dict[tuple[str, str], int] = {}  # (слот, день) → сколько попыток не удалось
-_slot_next_try: dict[tuple[str, str], float] = {}  # (слот, день) → когда пробовать снова (monotonic)
-_slot_done: set[tuple[str, str, int]] = set()  # (слот, день, кому) — уже доставлено или отложено
+_slot_attempts: dict[tuple[str, str], int] = {}
+_slot_next_try: dict[tuple[str, str], float] = {}
+_slot_done: set[tuple[str, str, int]] = set()
 
 
 def retry_delay(attempt: int) -> int:
@@ -383,14 +378,13 @@ async def run_slot(bot: Bot, hhmm: str, day: str) -> None:
             _slot_done.add((hhmm, day, user_id))
             continue
         except Exception as exc:
-            # Например, она ещё ни разу не открыла бота (Telegram не даёт писать первым)
             failed = True
             attempt = _slot_attempts[key] = _slot_attempts.get(key, 0) + 1
             delay = retry_delay(attempt)
             _slot_next_try[key] = clock.monotonic() + delay * 60
             store.count(day, "errors")
             log.exception("Не удалось отправить %s → %s (попытка %s)", hhmm, user_id, attempt)
-            if attempt == 1:  # дальше — только в лог контейнера, админу придёт итог
+            if attempt == 1:
                 admin_log.error(f"Слот {hhmm} → {user_id} не отправился, повторяю каждые несколько минут", exc)
             continue
         _slot_done.add((hhmm, day, user_id))
@@ -407,7 +401,7 @@ async def run_planned(bot: Bot, now: datetime) -> None:
         if at > now:
             continue
         store.remove_planned(item["id"])
-        if now - at > SEND_WINDOW:  # бот был выключен слишком долго — уже неактуально
+        if now - at > SEND_WINDOW:
             store.count(now.date().isoformat(), "missed")
             admin_log.send(f"❌ Разовая отправка на {at:%d.%m %H:%M} пропущена: бот был недоступен")
             continue
@@ -468,7 +462,7 @@ async def scheduler_tick(bot: Bot) -> None:
             continue
         if now < start + SEND_WINDOW:
             await run_slot(bot, hhmm, day)
-        elif (hhmm, day) in _slot_attempts:  # окно кончилось, а отправить так и не удалось
+        elif (hhmm, day) in _slot_attempts:
             finish_slot(hhmm, day)
             store.count(day, "missed")
             admin_log.send(f"❌ Слот {hhmm} пропущен: за {SEND_WINDOW.seconds // 3600} ч отправить не удалось")
@@ -480,13 +474,10 @@ async def scheduler_tick(bot: Bot) -> None:
 
 def add_time(hhmm: str) -> None:
     store.add_time(hhmm)
-    # Если время сегодня уже прошло — не шлём сразу, начнём с завтра.
     now = datetime.now(cfg.tz)
     if hhmm <= now.strftime("%H:%M"):
         store.mark_sent(hhmm, now.date().isoformat())
 
-
-# ---------- Общие действия (команды и кнопки) ----------
 
 async def make_compliment() -> str:
     text = await ai.compliment()
@@ -532,8 +523,6 @@ async def do_action(action: str, message: Message, user) -> None:
         return
     log_action(user, ACTION_LABELS[action], html)
 
-
-# ---------- Хэндлеры ----------
 
 async def access_guard(handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
                        event: TelegramObject, data: dict[str, Any]) -> Any:
@@ -599,8 +588,6 @@ async def mood_cmd(message: Message) -> None:
     if is_allowed(message.from_user.id):
         await message.answer("Как ты сейчас? 🌈", reply_markup=mood_kb())
 
-
-# ---------- Расписание ----------
 
 @router.message(Command("schedule"))
 async def schedule_cmd(message: Message, command: CommandObject) -> None:
@@ -688,7 +675,7 @@ async def schedule_btn(cb: CallbackQuery, state: FSMContext) -> None:
         try:
             await cb.message.edit_text(schedule_text(), reply_markup=schedule_kb())
         except TelegramBadRequest:
-            pass  # ничего не изменилось (например, «как было», когда и так как было)
+            pass
 
 
 @router.message(StateFilter(ScheduleForm.waiting_time), F.text)
@@ -709,8 +696,6 @@ async def schedule_time_input(message: Message, state: FSMContext) -> None:
     log_action(message.from_user, "🗓 добавила время", detail=f" {hhmm}")
     await message.answer(f"Готово! Добавила {kind_icon(hhmm)} <b>{hhmm}</b>\n\n" + schedule_text(), reply_markup=schedule_kb())
 
-
-# ---------- Админ-панель (ручной режим) ----------
 
 def next_slot_text(now: datetime) -> str:
     if store.paused:
@@ -803,7 +788,7 @@ async def show_admin(cb: CallbackQuery, text: str | None = None) -> None:
     try:
         await cb.message.edit_text(text or admin_text(), reply_markup=admin_kb())
     except TelegramBadRequest:
-        pass  # ничего не изменилось
+        pass
 
 
 @router.message(Command("admin"))
@@ -916,8 +901,6 @@ async def admin_input(message: Message, state: FSMContext) -> None:
                              + admin_text(), reply_markup=admin_kb(), disable_notification=True)
 
 
-# ---------- Остальные кнопки ----------
-
 @router.callback_query(F.data.startswith("mood:"))
 async def mood_pick(cb: CallbackQuery) -> None:
     await cb.answer()
@@ -947,8 +930,6 @@ async def action_btn(cb: CallbackQuery) -> None:
     await cb.answer()
     await do_action(cb.data, cb.message, cb.from_user)
 
-
-# ---------- Статистика ----------
 
 @router.message(Command("stats"))
 async def stats(message: Message) -> None:
@@ -1008,9 +989,9 @@ async def main() -> None:
     dp.include_router(router)
     admin_log.setup(bot, cfg.admin_id, cfg.tz)
     await ai.discover_models()
-    for item in store.data["pending"]:  # не доставили до перезапуска — продолжаем ждать сеть
+    for item in store.data["pending"]:
         start_pending(bot, item, 60)
-    scheduler_task = asyncio.create_task(scheduler(bot))  # noqa: F841 — держим ссылку, чтобы задачу не собрал GC
+    scheduler_task = asyncio.create_task(scheduler(bot))
     log.info("Бот запущен. Расписание: %s (%s)", ", ".join(store.times), cfg.tz.key)
     admin_log.send(
         f"🔄 <b>Бот запущен</b>. Расписание: {', '.join(store.times) or '—'}"

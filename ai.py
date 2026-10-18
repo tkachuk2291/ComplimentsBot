@@ -15,23 +15,19 @@ from girl_profile import FORMATS, GIRL_PROFILE, MOODS, NICKNAMES, SUPERPOWERS_HI
 
 log = logging.getLogger(__name__)
 
-# Модели, доступные на бесплатном тарифе Gemini API, — от лучшей к самой «лёгкой».
-# Плюс при старте бот сам находит новые flash-модели через API и добавляет их в конец.
 FREE_MODELS = [
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
 ]
-# Не текстовые модели или модели без поддержки JSON-ответа и system_instruction.
 SKIP_MARKERS = ("image", "tts", "audio", "live", "embedding", "vision", "gemma", "learnlm", "aqa", "robotics", "computer-use")
-RATE_LIMIT_PAUSE = 60  # 429 «в минуту» — модель отдыхает минуту
-DAILY_LIMIT_PAUSE = 3 * 60 * 60  # дневная квота кончилась — не дёргаем её 3 часа
+RATE_LIMIT_PAUSE = 60
+DAILY_LIMIT_PAUSE = 3 * 60 * 60
 ERROR_PAUSE = 5 * 60
 
-PROMPT_HISTORY = 25  # сколько последних текстов каждого вида показывать Gemini
-REPEAT_RETRIES = 2  # сколько раз переспросить, если получился повтор
-# Прозвища можно только склонять: пупс/пупса/пупсу/пупсом/пупсе (+ мн. ч.), так же «кабан».
+PROMPT_HISTORY = 25
+REPEAT_RETRIES = 2
 NICK_ENDINGS = ("", "а", "у", "ом", "е", "ы", "ов", "ам", "ами", "ах")
 NICK_RE = re.compile(r"\b(пупс|кабан)([а-яё]*)", re.IGNORECASE)
 
@@ -48,7 +44,7 @@ def fix_nicknames(text: str) -> str:
         if tail.lower() in NICK_ENDINGS:
             return m.group(0)
         low = tail.lower()
-        if low.endswith(("ище", "ина")):  # «кабанище», «кабанина» — увеличительные, берём начальную форму
+        if low.endswith(("ище", "ина")):
             return stem
         ending = next((e for e in ("ами", "ах", "ам", "ов", "ом", "ем", "ой") if low.endswith(e)), None)
         if ending is None:
@@ -100,7 +96,7 @@ class AI:
         self.models = cfg.gemini_models or list(FREE_MODELS)
         self.paused_until: dict[str, float] = {}
         self.last_model: str | None = None
-        self.last_source = ""  # откуда последний текст: имя модели или «запасной текст» — для журнала админа
+        self.last_source = ""
         self.store = store
         sender = f" Сообщения ей отправляет {cfg.sender_name}, он её очень ценит." if cfg.sender_name else ""
         self.system = (
@@ -167,7 +163,6 @@ class AI:
             match = re.search(r"(\d+(?:\.\d+)?)", name)
             return float(match.group(1)) if match else 0
 
-        # Стабильные раньше превью, новые раньше старых.
         found.sort(key=lambda n: ("preview" in n or "exp" in n, -version(n)))
         self.models += found
         log.info("Цепочка моделей: %s", ", ".join(self.models))
@@ -204,7 +199,7 @@ class AI:
                     daily = "PerDay" in str(exc) or "per day" in str(exc).lower()
                     pause = DAILY_LIMIT_PAUSE if daily else RATE_LIMIT_PAUSE
                 elif exc.code in (403, 404):
-                    pause = DAILY_LIMIT_PAUSE * 8  # модель недоступна этому ключу — сутки не трогаем
+                    pause = DAILY_LIMIT_PAUSE * 8
                 else:
                     pause = ERROR_PAUSE
                 self.paused_until[model] = time.monotonic() + pause
