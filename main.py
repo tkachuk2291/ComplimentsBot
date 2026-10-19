@@ -20,6 +20,7 @@ import admin_log
 from ai import AI
 from config import Config, load_config
 from girl_profile import MOODS
+from logsetup import aiogram_middleware, setup_logging, watch_loop
 from storage import Storage
 
 log = logging.getLogger("compliment-bot")
@@ -980,9 +981,11 @@ async def on_error(event: ErrorEvent) -> bool:
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    setup_logging("compliment-bot")
+    watch_loop()
     bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
+    dp.update.outer_middleware(aiogram_middleware())
     dp.message.outer_middleware(access_guard)
     dp.callback_query.outer_middleware(access_guard)
     dp.errors.register(on_error)
