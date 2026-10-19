@@ -4,9 +4,12 @@
 комплименты, предсказания и т.п. через Gemini. Подробное описание функций — в `README.md`.
 
 ## Устройство
-- `main.py` — хэндлеры, расписание (`scheduler`/`run_slot`), админ-панель `/admin`, `on_error` (dp.errors).
+- `main.py` — хэндлеры, расписание (`scheduler`/`run_slot`), `on_error` (dp.errors). Панели `/admin` больше нет — она в админ-боте (вкладка «Функции»).
 - `ai.py` — цепочка моделей Gemini (`discover_models`), при лимите берёт следующую; `fallback.py` — запасные тексты.
-- `admin_log.py` — журнал админу в Telegram без звука, с очередью на время простоя сети. Никогда не роняет бота.
+- `admin_log.py` — журнал админа: пишет в лог записи `event: "journal"` (поле `text` — HTML), админ-бот пересылает их владельцу без звука.
+  Сам проверяет связь с Telegram раз в минуту (`network_down`/`_network_up`). Никогда не роняет бота.
+- `control.py` — внутренний API для админ-бота на порту 8081 (наружу только `127.0.0.1:18081`), заголовок `X-Control-Token` = `CONTROL_TOKEN`.
+  `/status`, `/send`, `/plan`, `/unplan`, `/pause`, `/schedule/add`, `/schedule/remove`. Пустой токен — API выключен.
 - `storage.py` — JSON-хранилище (расписание, история без повторов, счётчики, `pending` — отложенные из-за сети).
 - `config.py` — всё из env; пустые значения (Portainer) → по умолчанию.
 - Доступ: только `ALLOWED_USERS` и `ADMIN_ID` (`access_guard`).
@@ -22,4 +25,4 @@
 - Строка запуска: `Бот запущен. Расписание: ...`.
 
 ## Инциденты
-- Пока нет.
+- **2026-10-19** — админка перенесена в AdminBot: журнал через логи, действия через `control.py`. `CONTROL_TOKEN` лежит в `stack.env` стека и как `COMPLIMENTS_CONTROL_TOKEN` в `~/.config/admin-bot/admin.env`.
