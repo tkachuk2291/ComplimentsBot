@@ -1,14 +1,12 @@
-"""Журнал действий для админа в Telegram.
+"""Журнал действий для админа.
 
-Всё отправляется без звука (disable_notification=True). Модуль никогда не роняет бота:
-любые свои ошибки он ловит сам. Пока Telegram недоступен, сообщения копятся в очереди
-и уходят одной пачкой, как только связь вернётся.
+Записи уходят в лог контейнера с полем event=journal, админ-бот пересылает их владельцу без звука.
+Модуль никогда не роняет бота: любые свои ошибки он ловит сам.
 """
 import asyncio
 import logging
 import re
 import traceback
-from collections import deque
 from datetime import datetime
 from html import escape, unescape
 from zoneinfo import ZoneInfo
@@ -18,15 +16,11 @@ from aiogram.exceptions import TelegramNetworkError
 
 log = logging.getLogger("admin-log")
 
-QUEUE_LIMIT = 300
-MESSAGE_LIMIT = 3800
-FLUSH_PAUSE = 2
 PROBE_EVERY = 60
 
 _bot: Bot | None = None
 _admin_id: int | None = None
 _tz: ZoneInfo | None = None
-_queue: deque[str] = deque(maxlen=QUEUE_LIMIT)
 _offline_since: datetime | None = None
 _task: asyncio.Task | None = None
 
@@ -46,7 +40,7 @@ def _stamp() -> str:
 def setup(bot: Bot, admin_id: int | None, tz: ZoneInfo) -> None:
     global _bot, _admin_id, _tz, _task
     _bot, _admin_id, _tz = bot, admin_id, tz
-    if admin_id and _task is None:
+    if _task is None:
         _task = asyncio.create_task(_worker())
 
 
@@ -62,13 +56,16 @@ def offline_since() -> datetime | None:
     return _offline_since
 
 
+def _plain(html_text: str) -> str:
+    return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", "", html_text))).strip()
+
+
 def send(text: str) -> None:
-    """Поставить в очередь сообщение админу (HTML). Ничего не ждёт и не бросает исключений."""
+    """Записать сообщение в журнал админа (HTML). Ничего не ждёт и не бросает исключений."""
     try:
-        if _admin_id:
-            _queue.append(f"<i>{_stamp()}</i> {text}")
+        log.info(_plain(text)[:500], extra={"event": "journal", "text": f"<i>{_stamp()}</i> {text}"})
     except Exception:
-        log.exception("admin_log: не удалось поставить сообщение в очередь")
+        log.exception("admin_log: не удалось записать в журнал")
 
 
 def error(title: str, exc: BaseException | None = None) -> None:
@@ -89,8 +86,7 @@ def summary(exc: BaseException) -> str:
 
 def preview(html_text: str, limit: int = 160) -> str:
     """Начало отправленного текста без HTML-тегов — чтобы видеть, что именно ушло."""
-    plain = unescape(re.sub(r"<[^>]+>", "", html_text))
-    plain = re.sub(r"\s+", " ", plain).strip()
+    plain = _plain(html_text)
     return e(plain if len(plain) <= limit else plain[:limit] + "…")
 
 
@@ -113,51 +109,18 @@ def _network_up() -> None:
     _offline_since = None
 
 
-def _batch() -> str:
-    """Склеивает накопившиеся сообщения в одно, чтобы после простоя не было десятков сообщений."""
-    parts: list[str] = []
-    size = 0
-    while _queue and size + len(_queue[0]) + 2 <= MESSAGE_LIMIT:
-        item = _queue.popleft()
-        parts.append(item)
-        size += len(item) + 2
-    if not parts and _queue:
-        parts.append(_queue.popleft()[:MESSAGE_LIMIT])
-    return "\n\n".join(parts)
-
-
 async def _worker() -> None:
-    last_probe = 0.0
-    loop = asyncio.get_running_loop()
     while True:
         try:
-            if _offline_since is None and loop.time() - last_probe >= PROBE_EVERY:
-                last_probe = loop.time()
-                try:
-                    await _bot.get_me()
-                except TelegramNetworkError:
-                    network_down()
-            if _offline_since is not None:
-                try:
-                    await _bot.get_me()
-                except TelegramNetworkError:
-                    await asyncio.sleep(PROBE_EVERY)
-                    continue
+            try:
+                await _bot.get_me()
+            except TelegramNetworkError:
+                network_down()
+            else:
                 _network_up()
-            if _queue:
-                text = _batch()
-                try:
-                    await _bot.send_message(_admin_id, text, disable_notification=True,
-                                            disable_web_page_preview=True)
-                except TelegramNetworkError:
-                    _queue.appendleft(text)
-                    network_down()
-                    continue
-                except Exception:
-                    log.exception("admin_log: не удалось отправить сообщение админу")
-            await asyncio.sleep(FLUSH_PAUSE)
+            await asyncio.sleep(PROBE_EVERY)
         except asyncio.CancelledError:
             raise
         except Exception:
-            log.exception("admin_log: сбой в обработчике очереди")
+            log.exception("admin_log: сбой проверки связи")
             await asyncio.sleep(PROBE_EVERY)

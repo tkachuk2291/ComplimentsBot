@@ -17,6 +17,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, ErrorEvent, InlineKeyboardButton, InlineKeyboardMarkup, Message, TelegramObject
 
 import admin_log
+import control
 from ai import AI
 from config import Config, load_config
 from girl_profile import MOODS
@@ -83,12 +84,6 @@ ACTION_LABELS = {
 
 class ScheduleForm(StatesGroup):
     waiting_time = State()
-
-
-class AdminForm(StatesGroup):
-    text = State()
-    plan_text = State()
-    plan_time = State()
 
 
 def e(text: str) -> str:
@@ -708,200 +703,6 @@ def next_slot_text(now: datetime) -> str:
     return f"{kind_icon(store.times[0])} завтра {store.times[0]}" if store.times else "—"
 
 
-def admin_text() -> str:
-    now = datetime.now(cfg.tz)
-    uptime = now - STARTED_AT
-    hours, rest = divmod(int(uptime.total_seconds()), 3600)
-    times = ", ".join(store.times) or "—"
-    planned = "\n".join(
-        f"   • {datetime.fromisoformat(p['at']):%d.%m %H:%M} — {SEND_KINDS[p['kind']]}" for p in store.data["planned"]
-    ) or "   нет"
-    offline = admin_log.offline_since()
-    network = f"🔴 нет с {offline:%H:%M}" if offline else "🟢 есть"
-    return (
-        "🛠 <b>Админ-панель</b>\n\n"
-        f"🗓 Расписание: {times} {'(⏸ пауза)' if store.paused else '✅'}\n"
-        f"⏭ Следующее: {next_slot_text(now)}\n"
-        f"⏰ Разовые:\n{planned}\n"
-        f"📮 Ждут появления сети: {len(store.data['pending'])}\n"
-        f"🌐 Связь с Telegram: {network}\n"
-        f"✅ Последнее доставленное: {store.data['last_success'] or '—'}\n"
-        f"🤖 Gemini: {e(ai.last_model or '—')}\n"
-        f"⏱ Работает: {hours} ч {rest // 60} мин (с {STARTED_AT:%d.%m %H:%M})"
-    )
-
-
-def admin_kb() -> InlineKeyboardMarkup:
-    b = InlineKeyboardButton
-    rows = [
-        [b(text="☀️ Утреннее сейчас", callback_data="adm:send:morning"),
-         b(text="🌙 Вечернее сейчас", callback_data="adm:send:evening")],
-        [b(text="💖 Комплимент сейчас", callback_data="adm:send:compliment"),
-         b(text="🔮 Предсказание сейчас", callback_data="adm:send:prediction")],
-        [b(text="✍️ Свой текст сейчас", callback_data="adm:text")],
-        [b(text="⏰ Запланировать разово", callback_data="adm:plan")],
-    ]
-    for p in store.data["planned"]:
-        at = datetime.fromisoformat(p["at"])
-        rows.append([b(text=f"❌ {at:%d.%m %H:%M} {SEND_KINDS[p['kind']]}", callback_data=f"adm:unplan:{p['id']}")])
-    rows.append([
-        b(text="🗓 Расписание", callback_data="sch:show"),
-        b(text="▶️ Включить расписание", callback_data="adm:resume")
-        if store.paused else b(text="⏸ Пауза расписания", callback_data="adm:pause"),
-    ])
-    rows.append([b(text="📊 Статистика", callback_data="adm:stats"), b(text="🔄 Обновить", callback_data="adm:menu")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def confirm_kb(yes: str) -> InlineKeyboardMarkup:
-    b = InlineKeyboardButton
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        b(text="✅ Отправить", callback_data=yes), b(text="↩️ Отмена", callback_data="adm:menu"),
-    ]])
-
-
-def plan_kind_kb() -> InlineKeyboardMarkup:
-    b = InlineKeyboardButton
-    rows = [[b(text=label, callback_data=f"adm:plan:{kind}")] for kind, label in SEND_KINDS.items()]
-    rows.append([b(text="↩️ Отмена", callback_data="adm:menu")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def admin_stats_text() -> str:
-    def block(title: str, stats: dict) -> str:
-        actions = ", ".join(f"{k} ×{n}" for k, n in sorted(stats["actions"].items(), key=lambda kv: -kv[1]))
-        return (
-            f"<b>{title}</b>\nПо расписанию: {stats['scheduled']} · вручную: {stats['manual']}\n"
-            f"Нажатия: {actions or 'не было'}\nОшибок: {stats['errors']} · пропущено: {stats['missed']}"
-        )
-    s = store.data["stats"]
-    logged_days = len(store.data["daily"])
-    return (
-        f"📊 <b>Статистика</b>\n\n{block('Сегодня', store.today_stats(today()))}\n\n"
-        f"{block(f'За {logged_days} дн. с журналом', store.totals())}\n\n"
-        f"<b>За всё время</b>\nДней с сообщениями: {store.data['day_counter']}\n"
-        f"Комплиментов: {s.get('compliments', 0)} · предсказаний: {s.get('predictions', 0)} · "
-        f"причин: {store.data['reason_counter']}\n\n" + admin_text()
-    )
-
-
-async def show_admin(cb: CallbackQuery, text: str | None = None) -> None:
-    try:
-        await cb.message.edit_text(text or admin_text(), reply_markup=admin_kb())
-    except TelegramBadRequest:
-        pass
-
-
-@router.message(Command("admin"))
-async def admin_cmd(message: Message, state: FSMContext) -> None:
-    if not admin_log.is_admin(message.from_user.id):
-        return
-    await state.clear()
-    await message.answer(admin_text(), reply_markup=admin_kb(), disable_notification=True)
-
-
-@router.callback_query(F.data.startswith("adm:"))
-async def admin_btn(cb: CallbackQuery, state: FSMContext) -> None:
-    if not admin_log.is_admin(cb.from_user.id):
-        await cb.answer()
-        return
-    _, action, *rest = cb.data.split(":", 2)
-    arg = rest[0] if rest else ""
-    if action == "send" and arg in SEND_KINDS:
-        await cb.answer()
-        await cb.message.edit_text(f"Отправить ей {SEND_KINDS[arg]} прямо сейчас?", reply_markup=confirm_kb(f"adm:go:{arg}"))
-    elif action == "go" and arg in SEND_KINDS:
-        await cb.answer("Отправляю…")
-        await cb.message.edit_text(f"⏳ Готовлю и отправляю {SEND_KINDS[arg]}…")
-        result = await send_manual(cb.bot, arg, None, "вручную из админки")
-        await show_admin(cb, f"{result}\n\n{admin_text()}")
-    elif action == "text":
-        await cb.answer()
-        await state.set_state(AdminForm.text)
-        await cb.message.answer("✍️ Напиши текст, который отправить ей сейчас. Передумал — «отмена».",
-                                disable_notification=True)
-    elif action == "gotext":
-        text = (await state.get_data()).get("text")
-        await state.clear()
-        await cb.answer("Отправляю…")
-        if not text:
-            await show_admin(cb, "Текст потерялся, начни заново\n\n" + admin_text())
-            return
-        result = await send_manual(cb.bot, "text", text, "вручную из админки")
-        await show_admin(cb, f"{result}\n\n{admin_text()}")
-    elif action == "plan" and not arg:
-        await cb.answer()
-        await cb.message.edit_text("⏰ Что запланировать?", reply_markup=plan_kind_kb())
-    elif action == "plan" and arg in SEND_KINDS:
-        await cb.answer()
-        await state.update_data(kind=arg)
-        if arg == "text":
-            await state.set_state(AdminForm.plan_text)
-            await cb.message.answer("✍️ Напиши текст для разовой отправки. Передумал — «отмена».",
-                                    disable_notification=True)
-        else:
-            await state.set_state(AdminForm.plan_time)
-            await cb.message.answer(PLAN_TIME_HINT, disable_notification=True)
-    elif action == "unplan":
-        item = store.remove_planned(arg)
-        await cb.answer("Убрал" if item else "Уже нет")
-        await show_admin(cb)
-    elif action in ("pause", "resume"):
-        store.set_paused(action == "pause")
-        await cb.answer("Расписание на паузе" if action == "pause" else "Расписание включено ✅")
-        await show_admin(cb)
-    elif action == "stats":
-        await cb.answer()
-        await show_admin(cb, admin_stats_text())
-    else:
-        await cb.answer()
-        await state.clear()
-        await show_admin(cb)
-
-
-PLAN_TIME_HINT = (
-    "Во сколько отправить? Например <code>9:30</code> (сегодня, а если уже прошло — завтра) "
-    "или <code>завтра 21:00</code>. Передумал — «отмена»."
-)
-CANCEL_WORDS = ("отмена", "cancel", "/cancel")
-
-
-@router.message(StateFilter(AdminForm.text, AdminForm.plan_text, AdminForm.plan_time), F.text)
-async def admin_input(message: Message, state: FSMContext) -> None:
-    if not admin_log.is_admin(message.from_user.id):
-        return
-    text = message.text.strip()
-    if text.lower() in CANCEL_WORDS:
-        await state.clear()
-        await message.answer("Окей, отменил 👌\n\n" + admin_text(), reply_markup=admin_kb(), disable_notification=True)
-        return
-    current = await state.get_state()
-    if current == AdminForm.text.state:
-        await state.update_data(text=text)
-        await message.answer(f"Отправить ей вот это?\n\n{e(text)}", reply_markup=confirm_kb("adm:gotext"),
-                             disable_notification=True)
-    elif current == AdminForm.plan_text.state:
-        await state.update_data(text=text)
-        await state.set_state(AdminForm.plan_time)
-        await message.answer(PLAN_TIME_HINT, disable_notification=True)
-    else:
-        tomorrow = text.lower().startswith("завтра")
-        hhmm = parse_time(text.lower().removeprefix("завтра"))
-        if not hhmm:
-            await message.answer("Не понял время 🙈 " + PLAN_TIME_HINT, disable_notification=True)
-            return
-        now = datetime.now(cfg.tz)
-        hours, minutes = map(int, hhmm.split(":"))
-        at = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
-        if tomorrow or at <= now:
-            at += timedelta(days=1)
-        data = await state.get_data()
-        await state.clear()
-        store.add_planned(at.isoformat(), data.get("kind", "compliment"), data.get("text"))
-        await message.answer(f"Запланировал {SEND_KINDS[data.get('kind', 'compliment')]} на {at:%d.%m %H:%M} ✅\n\n"
-                             + admin_text(), reply_markup=admin_kb(), disable_notification=True)
-
-
 @router.callback_query(F.data.startswith("mood:"))
 async def mood_pick(cb: CallbackQuery) -> None:
     await cb.answer()
@@ -935,9 +736,6 @@ async def action_btn(cb: CallbackQuery) -> None:
 @router.message(Command("stats"))
 async def stats(message: Message) -> None:
     if not is_allowed(message.from_user.id):
-        return
-    if admin_log.is_admin(message.from_user.id):
-        await message.answer(admin_stats_text(), disable_notification=True)
         return
     s = store.data["stats"]
     mode = "только по запросу" if store.paused else ", ".join(store.times) or "—"
@@ -991,6 +789,10 @@ async def main() -> None:
     dp.errors.register(on_error)
     dp.include_router(router)
     admin_log.setup(bot, cfg.admin_id, cfg.tz)
+    await control.start(control.Context(
+        bot=bot, cfg=cfg, store=store, ai=ai, kinds=SEND_KINDS, started_at=STARTED_AT, parse_time=parse_time,
+        next_slot_text=next_slot_text, send_manual=send_manual, offline_since=admin_log.offline_since, today=today,
+    ))
     await ai.discover_models()
     for item in store.data["pending"]:
         start_pending(bot, item, 60)
@@ -999,7 +801,7 @@ async def main() -> None:
     admin_log.send(
         f"🔄 <b>Бот запущен</b>. Расписание: {', '.join(store.times) or '—'}"
         f"{' (⏸ пауза)' if store.paused else ''}; ждут сети: {len(store.data['pending'])}; "
-        f"разовых: {len(store.data['planned'])}. Панель: /admin"
+        f"разовых: {len(store.data['planned'])}."
     )
     await dp.start_polling(bot)
 
