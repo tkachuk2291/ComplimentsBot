@@ -11,7 +11,10 @@ import admin_log
 import fallback
 from config import Config
 from storage import Storage
-from girl_profile import FORMATS, GIRL_PROFILE, MOODS, NICKNAMES, SUPERPOWERS_HINT, THEMES
+try:
+    from girl_profile import FORMATS, GIRL_PROFILE, MOODS, NICKNAMES, SUPERPOWERS_HINT, THEMES
+except ImportError:  # личный профиль не в git, берём шаблон
+    from girl_profile_example import FORMATS, GIRL_PROFILE, MOODS, NICKNAMES, SUPERPOWERS_HINT, THEMES
 
 log = logging.getLogger(__name__)
 
