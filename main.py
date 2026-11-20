@@ -20,7 +20,10 @@ import admin_log
 import control
 from ai import AI
 from config import Config, load_config
-from girl_profile import MOODS
+try:
+    from girl_profile import MOODS
+except ImportError:  # личный профиль не в git, берём шаблон
+    from girl_profile_example import MOODS
 from logsetup import aiogram_middleware, setup_logging, watch_loop
 from storage import Storage
 
